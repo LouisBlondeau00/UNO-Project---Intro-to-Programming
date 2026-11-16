@@ -12,7 +12,7 @@ from functools import lru_cache
 from PIL import Image, ImageDraw
 
 from arcade import bots, hubmap
-from arcade.art import sprites
+from arcade.art import lighting, sprites
 from arcade.art.pixel import (
     CHAR_H, coin, darken, draw_lines, draw_text, key_icon, lock, mix, new_base, new_layer, outlined, panel, rect,
     rgb, shade, stamp, text_size, upscale, wrap,
@@ -310,6 +310,11 @@ def _room_shell(img) -> None:
     rect(d, BASE_W - 6, top, 6, BASE_H - top, (24, 17, 58))
 
 
+def _lay(img: Image.Image, layer: Image.Image, xy=(0, 0)) -> None:
+    """Put a see-through (RGBA) layer on top of an RGB picture, in place."""
+    img.paste(layer, xy, layer)
+
+
 @lru_cache(maxsize=2)
 def _hub_background() -> Image.Image:
     img = new_base("#1c1642")
@@ -368,6 +373,7 @@ def _hub_background() -> Image.Image:
     # door mat
     rect(d, 140, 173, 40, 7, (92, 61, 34))
     rect(d, 142, 175, 36, 3, (122, 84, 50))
+    _lay(img, lighting.drop_shadow(props, (2, 3), 0.55))  # soft shadow of the furniture on wall and floor
     stamp(img, outlined(props))
 
     # A6: neon signs and light from the ceiling
@@ -395,12 +401,17 @@ def hub_scene(actors, coins, prompts=(), champ_locked=True, glow=None, t=0, hud=
     for _, _, table, actor in sorted(drawables, key=lambda item: (item[0], item[1])):
         if table:
             cx, cy = hubmap.SPOTS[table]["center"]
+            _lay(img, lighting.soft_oval(50, 12, 0.55), (cx - 28, cy + 2))  # soft shadow under the table
             stamp(img, table_sprite(table, glow == table), (cx - TABLE_ORIGIN[0], cy - TABLE_ORIGIN[1]))
         else:
             x, y = actor["pos"]
-            d.ellipse([x - 6, y - 2, x + 5, y + 1], fill=(24, 18, 56))
+            _lay(img, lighting.soft_oval(13, 5, 0.7), (x - 9, y - 5))  # soft shadow at the feet
             sprites.draw_character(img, x, y, actor["look"], actor.get("dir", "down"), actor.get("step", 0), t)
 
+    for actor in actors:  # a warm light follows the player
+        if actor.get("player"):
+            img = lighting.light_pool(img, (actor["pos"][0], actor["pos"][1] - 6), 30)
+    img = lighting.vignette(img, 0.45)
     big = upscale(img)
     regions = []
 
@@ -527,7 +538,9 @@ def title_scene(t: int = 0) -> Image.Image:
         _machine(d, cx, 150, rgb(body), rgb(screen), w=26, h=62, glow=True)
     # the regulars
     for i, bot in enumerate(bots.BOTS):
+        _lay(img, lighting.soft_oval(13, 5, 0.7), (100 + i * 30 - 9, 163))
         sprites.draw_character(img, 100 + i * 30, 168, bots.look(bot), "down", 0, t)
+    img = lighting.vignette(img, 0.4)
     big = upscale(img)
     for line, y in (("ARCADE", 40), ("MASTERS", 150)):
         draw_text(big, (SCREEN_W // 2 + 6, y + 6), line, 12, "#3ad6ff", "mt")
@@ -580,6 +593,8 @@ def table_scene(kind, opponents, active=None, t=0):
     d.polygon([(22, 66), (298, 66), (304, 71), (16, 71)], fill=shade(felt, 1.5))
     d.line([(0, 92), (16, 71)], fill=shade(felt, 1.5))
     d.line([(BASE_W - 1, 92), (304, 71)], fill=shade(felt, 1.5))
+    img = lighting.light_pool(img, (BASE_W // 2, 130), 120, strength=0.12)  # the lamp over the table
+    img = lighting.vignette(img, 0.45)
     big = upscale(img)
     d = ImageDraw.Draw(big)
     for x, opponent in zip(xs, opponents):
