@@ -52,3 +52,7 @@ IDLE_EVERY = 1.2
 
 # Soft neon glow around bright colours on every picture (visual update, idea 2). Costs about 20 ms a picture.
 GLOW = True
+
+# Font for all text painted on the pictures (visual update, idea 4): a file in arcade/art/fonts/,
+# or None for the old built-in 5x7 font
+TEXT_FONT = "Jersey10-Regular.ttf"

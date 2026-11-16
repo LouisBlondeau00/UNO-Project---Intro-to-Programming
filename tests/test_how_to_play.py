@@ -48,7 +48,7 @@ def test_an_unknown_tab_is_rejected():
 
 
 def test_a_line_too_long_for_the_panel_is_rejected():
-    too_long = [dict(controls.TABS[0], rows=[("E", "A DESCRIPTION FAR TOO LONG TO FIT INSIDE THE PANEL")])]
+    too_long = [dict(controls.TABS[0], rows=[("E", "A DESCRIPTION FAR TOO LONG TO FIT INSIDE THE PANEL, EVEN WITH A NARROW FONT")])]
     with pytest.raises(ValueError):
         scenes.howto_panel(_background(), too_long, "room")
 

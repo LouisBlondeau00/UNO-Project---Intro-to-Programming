@@ -1,8 +1,11 @@
 """Tiny pixel-art toolkit built on Pillow.
 
 Scenes are painted on a small "base" canvas (320x180) and scaled up 3x with
-hard edges. Text and menus are then drawn on the big picture with our own
-pixel font (arcade/art/font.py), so the game needs no image or font files.
+hard edges. Text and menus are then drawn on the big picture.
+
+Text uses Jersey 10 (arcade/art/fonts/, SIL Open Font License) drawn without
+smoothing so it stays crisp. Set TEXT_FONT = None in config.py to go back to the
+built-in 5x7 font (arcade/art/font.py).
 """
 
 from __future__ import annotations
@@ -10,10 +13,14 @@ from __future__ import annotations
 import textwrap
 from functools import lru_cache
 
-from PIL import Image, ImageDraw, ImageFilter
+from pathlib import Path
+
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from arcade.art import font
-from arcade.config import BASE_H, BASE_W, SCALE
+from arcade.config import BASE_H, BASE_W, SCALE, TEXT_FONT
+
+FONT_DIR = Path(__file__).parent / "fonts"
 
 CHAR_W, CHAR_H = 6, font.GLYPH_H  # average letter advance and letter height, in font pixels
 
@@ -93,8 +100,37 @@ def stamp(img: Image.Image, layer: Image.Image, xy=(0, 0)) -> None:
 
 # ---------------------------------------------------------------- text
 
+def _font_size(scale: int) -> int:
+    """Font size whose capital letters are as tall as the old 5x7 letters (7 pixels at scale 1)."""
+    return 13 * scale
+
+
+@lru_cache(maxsize=16)
+def _ttf(scale: int) -> ImageFont.FreeTypeFont | None:
+    """The TrueType font at this scale, or None to use the built-in 5x7 font (which reads better at scale 1)."""
+    if not TEXT_FONT or scale < 2:
+        return None
+    return ImageFont.truetype(str(FONT_DIR / TEXT_FONT), _font_size(scale))
+
+
+@lru_cache(maxsize=4096)
+def _ttf_mask(text: str, scale: int) -> Image.Image:
+    """The text drawn with the TrueType font, crisp (no smoothing). Capitals fill the top GLYPH_H*scale rows."""
+    face = _ttf(scale)
+    cap_top = face.getbbox("H")[1]
+    left, _, right, _ = face.getbbox(text)
+    height = font.GLYPH_H * scale
+    mask = Image.new("L", (max(1, right - left), height + 3 * scale), 0)  # room below for , Q and J
+    draw = ImageDraw.Draw(mask)
+    draw.fontmode = "1"
+    draw.text((-left, -cap_top), text, font=face, fill=255)
+    return mask
+
+
 @lru_cache(maxsize=4096)
 def _text_mask(text: str, scale: int) -> Image.Image:
+    if _ttf(scale) is not None:
+        return _ttf_mask(text.upper(), scale)
     mask = Image.new("L", (max(1, font.width(text)), font.GLYPH_H), 0)
     x = 0
     for char in text:
@@ -110,7 +146,11 @@ def _text_mask(text: str, scale: int) -> Image.Image:
 
 
 def text_size(text: str, scale: int = 2) -> tuple[int, int]:
-    return font.width(str(text)) * scale, font.GLYPH_H * scale
+    """Width and height (of the capital letters) of the text, in pixels of the picture."""
+    text = str(text)
+    if _ttf(scale) is not None:
+        return (_ttf_mask(text.upper(), scale).width if text else 0), font.GLYPH_H * scale
+    return font.width(text) * scale, font.GLYPH_H * scale
 
 
 def draw_text(img, xy, text, scale=2, fill="#ffffff", anchor="lt", shadow=None):
@@ -119,20 +159,21 @@ def draw_text(img, xy, text, scale=2, fill="#ffffff", anchor="lt", shadow=None):
     if not text:
         return (xy[0], xy[1], xy[0], xy[1])
     mask = _text_mask(text, scale)
+    width, height = text_size(text, scale)  # anchors use the capital letters, not the room left for , Q and J
     x, y = xy
     if anchor[0] == "m":
-        x -= mask.width // 2
+        x -= width // 2
     elif anchor[0] == "r":
-        x -= mask.width
+        x -= width
     if anchor[1] == "m":
-        y -= mask.height // 2
+        y -= height // 2
     elif anchor[1] == "b":
-        y -= mask.height
+        y -= height
     x, y = int(x), int(y)
     if shadow is not None:
         img.paste(rgb(shadow), (x + scale, y + scale), mask)
     img.paste(rgb(fill), (x, y), mask)
-    return (x, y, x + mask.width, y + mask.height)
+    return (x, y, x + width, y + height)
 
 
 def wrap(text: str, max_chars: int) -> list[str]:
