@@ -36,7 +36,8 @@ def _prompts(near: str | None) -> list[dict]:
 
 def picture(prompts=(), glow=None, overrides=None, hint=True):
     locked = not championship.is_unlocked(S.player)
-    return scenes.hub_scene(state.hub_actors(overrides), S.player["coins"], prompts, locked, glow, hint=hint)
+    t = int(time.time() * 2) % 36  # V5: a clock for small animations (blinks, rainbow hair), two ticks a second
+    return scenes.hub_scene(state.hub_actors(overrides), S.player["coins"], prompts, locked, glow, t=t, hint=hint)
 
 
 def _animate_walk(slot) -> None:

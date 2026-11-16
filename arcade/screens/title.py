@@ -6,7 +6,7 @@ import streamlit as st
 
 from arcade import sound, state, ui
 from arcade.art import scenes
-from arcade.config import NAME_MAX
+from arcade.config import ANIMATIONS, NAME_MAX, TITLE_EVERY
 from arcade.player import InvalidName, clean_name
 from arcade.screens import howto
 from arcade.state import S
@@ -19,8 +19,17 @@ def _howto_button() -> None:
         st.rerun()
 
 
+@st.fragment(run_every=TITLE_EVERY if ANIMATIONS else None)
+def _title_picture() -> None:
+    """The title picture. It redraws itself every TITLE_EVERY seconds with the next animation frame (V5)."""
+    if S.screen != "title":
+        return
+    S["_title_frame"] = (S.get("_title_frame", -1) + 1) % scenes.TITLE_FRAMES
+    ui.show(st.container(key=ui.TITLE_KEY).empty(), scenes.title_scene(S["_title_frame"]))  # show(), for the fades
+
+
 def render() -> None:
-    ui.show(st.container(key=ui.TITLE_KEY).empty(), scenes.title_scene(0))  # show(), so the fades start from it
+    _title_picture()
     _, middle, _ = st.columns([1, 1.4, 1])
     with middle:
         if not S.get("naming"):

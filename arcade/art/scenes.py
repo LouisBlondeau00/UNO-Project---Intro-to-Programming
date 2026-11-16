@@ -203,6 +203,31 @@ def _floor_lane(d) -> None:
         rect(d, 159, y, 2, 3, mix("#ffe94a", FLOOR_B, 0.55))
 
 
+EYE = (34, 26, 30)  # the colour sprites.py uses for eyes
+
+
+def blink(img, cx, feet_y, skin, direction="down", scale=1) -> None:
+    """Close the eyes of a character drawn with sprites.draw_character at (cx, feet_y) (V5).
+
+    Only pixels that really are eye-coloured are painted over with skin, so hair
+    or anything else in front of the eyes is never touched.
+    """
+    if direction == "up":
+        return  # seen from behind: no eyes
+    # eye columns inside the figure; "right" is the mirror image of "left" in the 20-pixel-wide sprite
+    columns = {"down": (6, 9), "left": (5,), "right": (sprites.SPR_W - 1 - 2 * sprites.OX - 5,)}
+    left = cx - sprites.SPR_W * scale // 2
+    top = feet_y - sprites.SPR_H * scale
+    for ex in columns[direction]:
+        for ey in (5, 6):
+            for dx in range(scale):
+                for dy in range(scale):
+                    x = left + (sprites.OX + ex) * scale + dx
+                    y = top + (sprites.OY + ey) * scale + dy
+                    if 0 <= x < img.width and 0 <= y < img.height and img.getpixel((x, y))[:3] == EYE:
+                        img.putpixel((x, y), rgb(skin))
+
+
 def _trophy(d, cx, bottom):
     gold, dark, light = (255, 205, 60), (176, 120, 20), (255, 240, 170)
     rect(d, cx - 4, bottom - 2, 8, 2, dark)
@@ -407,6 +432,8 @@ def hub_scene(actors, coins, prompts=(), champ_locked=True, glow=None, t=0, hud=
             x, y = actor["pos"]
             _lay(img, lighting.soft_oval(13, 5, 0.7), (x - 9, y - 5))  # soft shadow at the feet
             sprites.draw_character(img, x, y, actor["look"], actor.get("dir", "down"), actor.get("step", 0), t)
+            if actor.get("step", 0) == 0 and (t + sum(map(ord, actor["name"]))) % 9 == 0:
+                blink(img, x, y, actor["look"][0], actor.get("dir", "down"))  # V5: now and then, a blink
 
     for actor in actors:  # a warm light follows the player
         if actor.get("player"):
@@ -516,19 +543,26 @@ def fade_through_black(old: Image.Image, new: Image.Image, steps: int) -> list[I
 
 # ---------------------------------------------------------------- title screen
 
-@lru_cache(maxsize=4)
+TITLE_FRAMES = 8  # the title screen loops through this many pictures (V5)
+
+
+@lru_cache(maxsize=TITLE_FRAMES + 2)
 def title_scene(t: int = 0) -> Image.Image:
+    """The title screen. t is the animation frame: stars twinkle, the floor grid scrolls, the regulars bounce."""
+    t %= TITLE_FRAMES
     img = new_base("#120d2e")
     d = ImageDraw.Draw(img)
     for y in range(0, 110):
         rect(d, 0, y, BASE_W, 1, mix("#120d2e", "#3a1a5e", y / 110))
     rng = random.Random(11)
-    for _ in range(60):
-        rect(d, rng.randrange(BASE_W), rng.randrange(90), 1, 1, rgb(rng.choice(["#ffffff", "#ffe94a", "#3ad6ff"])))
-    # neon floor grid
+    for i in range(60):
+        x, y, colour = rng.randrange(BASE_W), rng.randrange(90), rng.choice(["#ffffff", "#ffe94a", "#3ad6ff"])
+        twinkle = (i + t) % 6 == 0  # a few stars dim on each frame
+        rect(d, x, y, 1, 1, mix(colour, "#120d2e", 0.7) if twinkle else rgb(colour))
+    # neon floor grid, its lines sliding towards you
     rect(d, 0, 110, BASE_W, 70, (14, 10, 36))
     for i in range(9):
-        y = 110 + int((i / 8) ** 1.8 * 70)
+        y = 110 + int(((i + t / TITLE_FRAMES) / 9) ** 1.8 * 70)
         rect(d, 0, y, BASE_W, 1, mix("#ff4fa3", "#120d2e", 0.35))
     for i in range(-10, 11):
         d.line([(160 + i * 12, 110), (160 + i * 60, 180)], fill=mix("#ff4fa3", "#120d2e", 0.45))
@@ -538,8 +572,11 @@ def title_scene(t: int = 0) -> Image.Image:
         _machine(d, cx, 150, rgb(body), rgb(screen), w=26, h=62, glow=True)
     # the regulars
     for i, bot in enumerate(bots.BOTS):
+        hop = 1 if (t + i * 3) % 4 == 0 else 0  # they bounce to the music, one after the other
         _lay(img, lighting.soft_oval(13, 5, 0.7), (100 + i * 30 - 9, 163))
-        sprites.draw_character(img, 100 + i * 30, 168, bots.look(bot), "down", 0, t)
+        sprites.draw_character(img, 100 + i * 30, 168 - hop, bots.look(bot), "down", 0, t)
+        if (t + i * 5) % TITLE_FRAMES == 3:
+            blink(img, 100 + i * 30, 168 - hop, bots.look(bot)[0], "down")
     img = lighting.vignette(img, 0.4)
     big = upscale(img)
     for line, y in (("ARCADE", 40), ("MASTERS", 150)):
@@ -613,6 +650,8 @@ def result_panel(img, title, line, coins=None, footer="ENTER"):
     h = 150 + len(lines) * 30 + (50 if coins else 0)
     x0, x1 = 150, SCREEN_W - 150
     y0 = (SCREEN_H - h) // 2
+    if coins:
+        confetti(out, (x0, y0, x1, y0 + h))  # V5: a win gets a burst of confetti
     panel(out, (x0, y0, x1, y0 + h), "#fff6da", INK, bw=6)
     draw_text(out, (SCREEN_W // 2, y0 + 30), title, 5, INK, "mt")
     y = draw_lines(out, (SCREEN_W // 2, y0 + 90), lines, 3, "#3b3560", "mt")
@@ -620,11 +659,36 @@ def result_panel(img, title, line, coins=None, footer="ENTER"):
         label = f"+{coins} COINS"
         tw = text_size(label, 4)[0]
         cx = SCREEN_W // 2 - (tw + 40) // 2
+        sparkle(out, cx - 10, y + 2)  # V5: the coin shines
+        sparkle(out, cx + 40, y + 34, 2)
         coin(out, cx, y + 6, 4)
         draw_text(out, (cx + 42, y + 8), label, 4, "#c98a12", "lt")
         y += 50
     _footer_hint(out, SCREEN_W // 2, y0 + h - 34, footer)
     return out
+
+
+def confetti(img, box, count: int = 90, seed: int = 5) -> None:
+    """Little coloured paper bits scattered around a box (not on it), in place."""
+    rng = random.Random(seed)
+    d = ImageDraw.Draw(img)
+    x0, y0, x1, y1 = box
+    placed = 0
+    while placed < count:
+        x, y = rng.randrange(20, SCREEN_W - 20), rng.randrange(10, SCREEN_H - 10)
+        if x0 - 8 <= x <= x1 + 8 and y0 - 8 <= y <= y1 + 8:
+            continue  # keep the box itself readable
+        w, h = rng.choice(((9, 4), (4, 9), (6, 6)))
+        d.rectangle([x, y, x + w, y + h], fill=rgb(rng.choice(NEON)))
+        placed += 1
+
+
+def sparkle(img, cx, cy, size: int = 3) -> None:
+    """A four-pointed white sparkle centred on (cx, cy), in place."""
+    d = ImageDraw.Draw(img)
+    d.rectangle([cx - size * 3, cy - size // 2, cx + size * 3, cy + size // 2], fill=(255, 255, 255))
+    d.rectangle([cx - size // 2, cy - size * 3, cx + size // 2, cy + size * 3], fill=(255, 255, 255))
+    d.rectangle([cx - size, cy - size, cx + size, cy + size], fill=(255, 246, 170))
 
 
 def _footer_hint(img, cx, y, key="ENTER", text="CONTINUE"):
